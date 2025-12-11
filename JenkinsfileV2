@@ -11,12 +11,12 @@ pipeline {
         stage('Setup Environment') {
             steps {
                 sh '''
-                echo "Maven Version:"
-                mvn -v || echo "Maven not found"
-                echo "Docker Version:"
-                docker --version || echo "Docker not found"
-                echo "Environment: ''' + "${ENVIRONMENT}" + '''
-                echo "Build Number: ''' + "${BUILD_NUMBER}" + '''
+                    echo "Maven Version:"
+                    mvn -v || echo "Maven not found"
+                    echo "Docker Version:"
+                    docker --version || echo "Docker not found"
+                    echo "Environment: ''' + "${ENVIRONMENT}" + '''"
+                    echo "Build Number: ''' + "${BUILD_NUMBER}" + '''"
                 '''
             }
         }
@@ -24,7 +24,6 @@ pipeline {
         stage('Dynamic Agent Simulation') {
             steps {
                 script {
-                    // ✅ SIMULATE dynamic agent selection with Groovy logic (Jenkins-only)
                     def simulatedLabel = params.ENVIRONMENT == 'prod' ? 'docker-prod-capable' : 'docker-any'
                     def nodeInfo = [
                         hostname: sh(script: 'hostname || echo unknown', returnStdout: true).trim(),
@@ -32,7 +31,7 @@ pipeline {
                         environment: params.ENVIRONMENT
                     ]
                     writeFile file: 'agent-simulation.txt', text: "Simulated Agent: ${nodeInfo}"
-                    echo "✅ Dynamic agent simulation successful: ${nodeInfo}"
+                    echo "Dynamic agent simulation: ${nodeInfo}"
                 }
             }
         }
@@ -48,15 +47,13 @@ pipeline {
                 script {
                     def buildVariant = (BUILD_NUMBER.toInteger() % 3 == 0) ? 'fast' : 
                                      (BUILD_NUMBER.toInteger() % 2 == 0) ? 'standard' : 'slow'
-                    def parallelCount = buildVariant == 'fast' ? 4 : buildVariant == 'standard' ? 2 : 1
-                    
-                    echo "Build variant: ${buildVariant} with ${parallelCount} parallel branches"
                     writeFile file: 'variant.txt', text: "Variant: ${buildVariant}"
+                    echo "Build variant: ${buildVariant}"
                 }
             }
             post {
                 always {
-                    archiveArtifacts artifacts: 'variant.txt', fingerprint: true, allowEmptyArchive: true
+                    archiveArtifacts artifacts: 'variant.txt', allowEmptyArchive: true
                 }
             }
         }
@@ -77,8 +74,8 @@ pipeline {
             steps {
                 script {
                     def tag = params.CUSTOM_TAG ?: "demo-app-${BUILD_NUMBER}-${ENVIRONMENT}"
-                    sh "docker build -t ${tag} . || echo 'Docker build skipped (no Dockerfile)'"
                     env.IMAGE_TAG = tag
+                    sh "docker build -t ${tag} . || echo 'Docker build skipped'"
                     echo "Image tagged: ${tag}"
                 }
             }
@@ -87,12 +84,10 @@ pipeline {
         stage('Test Container') {
             steps {
                 sh '''
-                docker run -d -p 8081:8080 --name test-app ''' + "${IMAGE_TAG}" + ''' || echo "Container test skipped"
-                echo "Waiting for application to start..."
-                sleep 3
-                echo "Skipping health check - assuming success"
-                docker stop test-app || true
-                docker rm test-app || true
+                    docker run -d -p 8081:8080 --name test-app ''' + "${IMAGE_TAG}" + ''' || echo "Container test skipped"
+                    sleep 3
+                    docker stop test-app || true
+                    docker rm test-app || true
                 '''
             }
         }
@@ -100,96 +95,55 @@ pipeline {
         stage('Deploy') {
             steps {
                 sh '''
-                docker stop demo-app || true
-                docker rm demo-app || true
-                docker run -d -p 8090:8080 --name demo-app ''' + "${IMAGE_TAG}" + ''' || echo "Deploy skipped"
-                echo "Jenkins pipeline completed successfully!"
-                echo "App running at: http://localhost:8090"
+                    docker stop demo-app || true
+                    docker rm demo-app || true
+                    docker run -d -p 8090:8080 --name demo-app ''' + "${IMAGE_TAG}" + ''' || echo "Deploy skipped"
+                    echo "App running at: http://localhost:8090"
                 '''
             }
         }
 
         stage('Interactive Approval Gate') {
             steps {
-                input message: 'Approve continuation to advanced Jenkins-only stages?',
-                     ok: 'Continue', 
+                input message: 'Approve advanced Jenkins-only stages?',
+                     ok: 'Continue',
                      submitterParameter: 'approver',
                      parameters: [
                          choice(name: 'ADVANCED_MODE', choices: ['lite', 'full', 'expert'], description: 'Complexity level')
                      ]
             }
-            post {
-                success {
-                    script {
-                        writeFile file: 'approval.txt', text: "Approved by: ${approver} | Mode: ${ADVANCED_MODE}"
-                        archiveArtifacts artifacts: 'approval.txt', fingerprint: true, allowEmptyArchive: true
-                    }
-                }
-            }
         }
 
         stage('Workspace Info') {
             steps {
-                echo "Collecting workspace info..."
                 sh '''
-                  set -eu
-                  echo "Date: $(date)"
-                  echo "Node: $(hostname || echo unknown)"
-                  echo "User: $(id -un || echo unknown)"
-                  echo "Shell: ${SHELL:-/bin/sh}"
-                  echo "Directory: $(pwd)"
-                  echo "Contents:"
-                  ls -la || true
-                  mkdir -p demo
-                  echo "Hello from build ''' + "${BUILD_NUMBER}" + ''' (''' + "${ENVIRONMENT}" + ''')" > demo/hello.txt
-                  wc -c demo/hello.txt || true
+                    echo "Date: $(date)"
+                    echo "Node: $(hostname)"
+                    echo "User: $(id -un)"
+                    echo "Directory: $(pwd)"
+                    ls -la || true
+                    mkdir -p demo
+                    echo "Hello build ''' + "${BUILD_NUMBER}" + ''' (''' + "${ENVIRONMENT}" + ''')" > demo/hello.txt
                 '''
-                archiveArtifacts artifacts: 'demo/hello.txt', fingerprint: true, allowEmptyArchive: true
+                archiveArtifacts artifacts: 'demo/hello.txt', allowEmptyArchive: true
             }
         }
 
-        stage('Jenkins-Only Scripted Parallel') {
+        stage('Jenkins Scripted Parallel') {
             steps {
                 script {
-                    // ✅ JENKINS-ONLY: Scripted parallel execution (impossible in GitHub Actions YAML)
                     def branches = [:]
-                    branches['Branch-A1-Fast'] = {
-                        sh '''
-                          set -eu
-                          echo "A1-Start ''' + "${BUILD_NUMBER}" + '''" > a1.txt
-                          sleep 0.5
-                          echo "A1-End ✅" >> a1.txt
-                        '''
+                    branches['A-Fast'] = {
+                        sh 'echo "A-Start ' + "${BUILD_NUMBER}" + '" > a.txt && sleep 0.5 && echo "A-End" >> a.txt'
                     }
-                    branches['Branch-A2-Slow'] = {
-                        sh '''
-                          set -eu
-                          echo "A2-Start ''' + "${BUILD_NUMBER}" + '''" > a2.txt
-                          sleep 2
-                          echo "A2-End ✅" >> a2.txt
-                        '''
+                    branches['B-Slow'] = {
+                        sh 'echo "B-Start ' + "${BUILD_NUMBER}" + '" > b.txt && sleep 2 && echo "B-End" >> b.txt'
                     }
-                    branches['Branch-B-Medium'] = {
-                        sh '''
-                          set -eu
-                          echo "B-Start ''' + "${BUILD_NUMBER}" + '''" > b.txt
-                          sleep 1
-                          echo "B-End ✅" >> b.txt
-                        '''
-                    }
-                    branches['Branch-C-Dynamic'] = {
-                        script {
-                            def randomDelay = ((BUILD_NUMBER.toInteger() % 3) + 1)
-                            sh """
-                              set -eu
-                              echo "C-Start \${BUILD_NUMBER} (delay: ${randomDelay}s)" > c.txt
-                              sleep ${randomDelay}
-                              echo "C-End ✅" >> c.txt
-                            """
-                        }
+                    branches['C-Dynamic'] = {
+                        def delay = (BUILD_NUMBER.toInteger() % 3) + 1
+                        sh "echo \"C-Start ${BUILD_NUMBER} (delay:${delay}s)\" > c.txt && sleep ${delay} && echo \"C-End\" >> c.txt"
                     }
                     parallel branches
-                    echo "✅ All parallel branches completed!"
                 }
             }
         }
@@ -197,39 +151,132 @@ pipeline {
         stage('Jenkins Milestone') {
             steps {
                 script {
-                    // ✅ JENKINS-ONLY: Milestone cancels older concurrent runs
-                    milestone(ordinal: BUILD_NUMBER.toInteger())
-                    def statusFile = "milestone-${BUILD_NUMBER}.txt"
-                    writeFile file: statusFile, text: "Milestone ${BUILD_NUMBER} reached at " + new Date().format('yyyy-MM-dd HH:mm:ss')
-                    archiveArtifacts artifacts: "${statusFile}", fingerprint: true, allowEmptyArchive: true
+                    milestone(BUILD_NUMBER.toInteger())
+                    writeFile file: "milestone-${BUILD_NUMBER}.txt", 
+                        text: "Milestone ${BUILD_NUMBER} at " + new Date().format('yyyy-MM-dd HH:mm:ss')
+                }
+                archiveArtifacts artifacts: 'milestone-*.txt', allowEmptyArchive: true
+            }
+        }
+
+        stage('Collect Outputs') {
+            steps {
+                sh '''
+                    mkdir -p out
+                    echo "=== PARALLEL RESULTS ===" > out/combined.txt
+                    for f in a.txt b.txt c.txt; do
+                        [ -f "$f" ] && { echo "--- $f ---" >> out/combined.txt; cat "$f" >> out/combined.txt; } || echo "Missing $f" >> out/combined.txt
+                    done
+                '''
+                archiveArtifacts artifacts: 'out/combined.txt', allowEmptyArchive: true
+            }
+        }
+
+        stage('Advanced Retry Timeout') {
+            steps {
+                script {
+                    def timeoutMins = params.ENVIRONMENT == 'prod' ? 5 : 2
+                    timeout(time: timeoutMins, unit: 'MINUTES') {
+                        retry(3) {
+                            sh '''
+                                FLAKE=30
+                                if [ $((RANDOM % 100)) -lt $FLAKE ]; then
+                                    echo "Simulated failure"
+                                    exit 1
+                                else
+                                    echo "Success!"
+                                fi
+                            '''
+                        }
+                    }
                 }
             }
         }
 
-        stage('Collect Parallel Outputs') {
+        stage('Complex Stash Demo') {
             steps {
                 sh '''
-                  set -eu
-                  mkdir -p out
-                  echo "=== PARALLEL OUTPUTS ===" > out/combined.txt
-                  for file in a1.txt a2.txt b.txt c.txt; do
-                    if [ -f "$file" ]; then
-                      echo "--- $file ---" >> out/combined.txt
-                      cat "$file" >> out/combined.txt
-                    else
-                      echo "Missing: $file" >> out/combined.txt
-                    fi
-                  done
-                  cat out/combined.txt
+                    mkdir -p stashdir1 stashdir2
+                    echo "data1-''' + "${BUILD_NUMBER}" + '''" > stashdir1/data1.txt
+                    echo "data2-''' + "${BUILD_NUMBER}" + '''" > stashdir2/data2.txt
                 '''
-                archiveArtifacts artifacts: 'out/combined.txt', fingerprint: true, allowEmptyArchive: true
+                stash name: 'ws1', includes: 'stashdir1/**'
+                stash name: 'ws2', includes: 'stashdir2/**'
+                deleteDir()
+                unstash 'ws1'
+                unstash 'ws2'
+                sh 'ls -la stashdir*'
+                archiveArtifacts artifacts: 'stashdir*/*.txt', allowEmptyArchive: true
             }
         }
 
-        stage('Advanced Retry / Timeout') {
+        stage('Stage Post Demo') {
+            steps {
+                sh '''
+                    mkdir -p stage-post
+                    echo "Stage demo BUILD_NUMBER: ''' + "${BUILD_NUMBER}" + '''" > stage-post/demo.txt
+                '''
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'stage-post/demo.txt', allowEmptyArchive: true
+                }
+            }
+        }
+
+        stage('Groovy Dynamic') {
             steps {
                 script {
-                    // ✅ JENKINS-ONLY: Native timeout/retry (no third-party actions needed)
-                    def timeoutMinutes = params.ENVIRONMENT == 'prod' ? 5 : 2
-                    timeout(time: timeoutMinutes, unit: 'MINUTES') {
-                        retry(3) {
+                    def info = [
+                        build: "${BUILD_NUMBER}",
+                        env: "${ENVIRONMENT}",
+                        time: new Date().format('yyyy-MM-dd HH:mm:ss')
+                    ]
+                    writeFile file: 'groovy.json', text: groovy.json.JsonOutput.toJson(info)
+                    
+                    def stages = [:]
+                    (1..2).each { i ->
+                        stages["Dyn-${i}"] = { sh "echo 'Dynamic ${i}' > dyn-${i}.txt" }
+                    }
+                    parallel stages
+                }
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'groovy.json dyn-*.txt', allowEmptyArchive: true
+                }
+            }
+        }
+
+        stage('Final Report') {
+            steps {
+                sh '''
+                    mkdir -p summary
+                    {
+                        echo "PIPELINE SUMMARY"
+                        echo "Build: ''' + "${BUILD_NUMBER}" + ''' Env: ''' + "${ENVIRONMENT}" + '''"
+                        echo "Generated files:"
+                        find . -name "*.txt" -o -name "*.json" 2>/dev/null | head -10
+                    } > summary/report.txt
+                '''
+                archiveArtifacts artifacts: 'summary/report.txt', allowEmptyArchive: true
+            }
+        }
+    }
+
+    post {
+        always {
+            sh '''
+                docker stop demo-app test-app || true
+                docker rm demo-app test-app || true
+                docker rmi demo-app:* || true
+            '''
+        }
+        success {
+            echo "SUCCESS - All Jenkins features demonstrated!"
+        }
+        failure {
+            echo "FAILURE - Check logs"
+        }
+    }
+}
